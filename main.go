@@ -424,7 +424,7 @@ func printHTML(w http.ResponseWriter, html string) {
 	fmt.Fprintf(w, `<!DOCTYPE html>
 	<html>
 	<head>
-		<title>Shell Command Handler Documentation</title>
+		<title>LLMASS - LLM Asynchronous Shell Scheduler</title>
 		<link rel="stylesheet" href="/assets/style.css">
 	</head>
 	<body>
