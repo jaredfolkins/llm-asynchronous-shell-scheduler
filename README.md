@@ -109,7 +109,7 @@ The **output** of the command is:
 - saved in a new named `<int>.ticket` 
 - the file is inside `SESSIONS_DIR/<sessionname>/`
 
-## Ticket 
+## Status
 
 - **Description**: Returns the output of a specific ticket.
 - **Path**: [{FQDN}/status]({FQDN}/status)
@@ -121,7 +121,7 @@ The **output** of the command is:
 
 **Example**: 
 ```bash
-curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSIONID&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
+curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSION&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## History
@@ -135,7 +135,7 @@ curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSIONID&ticket=REPLACE_WITH_Y
 
 **Example**:
 ```bash
-curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSIONID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
+curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Context
@@ -168,7 +168,7 @@ After running commands, you’ll see a structure like:
 ```
 .
 ├── sessions
-│   └── mystifying_gould
+│   └── YOUR_SESSION_NAME
 │       ├── 1.ticket
 │       ├── 2.ticket
 │       └── ...
