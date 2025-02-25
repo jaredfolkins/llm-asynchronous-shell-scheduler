@@ -105,7 +105,7 @@ func getNextTicket(sessionFolder string) (int, error) {
 	// Return next ticket number
 	return maxTicket + 1, nil
 }
-func ticketHandler(w http.ResponseWriter, r *http.Request) {
+func statusHandler(w http.ResponseWriter, r *http.Request) {
 	// Ensure the request is a GET
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -448,7 +448,7 @@ func main() {
 	http.HandleFunc("/", readmeHandler)
 	http.HandleFunc("/shell", shellHandler)
 	http.HandleFunc("/history", histoyHandler)
-	http.HandleFunc("/ticket", ticketHandler)
+	http.HandleFunc("/status", statusHandler)
 	http.HandleFunc("/context", contextHandler)
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
 	// Start the server using the PORT from .env
