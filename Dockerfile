@@ -27,6 +27,7 @@ RUN apk add --no-cache bash curl
 # Copy binary from builder
 COPY --from=builder /app/llmass .
 COPY --from=builder /app/README.md .
+COPY --from=builder /app/CONTEXT.md .
 
 # Create sessions directory
 RUN mkdir -p sessions
