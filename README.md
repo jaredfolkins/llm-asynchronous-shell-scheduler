@@ -65,7 +65,7 @@ The `HASH` must be >= 32 characters long.
 
 **Example**:
 ```dotenv
-HASH=g5U8N2kL0f4R7zV3m1T6bJ9aQ8W0xC2e
+HASH=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED
 FQDN=http://localhost:8083
 PORT=8083
 SESSIONS_DIR=sessions
@@ -93,14 +93,14 @@ SESSIONS_DIR=sessions
 
 **Example**: 
 ```bash
-curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=g5U8N2kL0f4R7zV3m1T6bJ9aQ8W0xC2e"
+curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 A **successful** response returns:
 ```
 {
-  "ticket":1,
-  "session":"mystifying_gould"
+  "ticket":REMEMBER_THIS_ID_TO_MANAGE_SEQUENTIAL_REQUESTS_DURING_THIS_SESSION,
+  "session":"REMEMBER_SESSION_TO_MAINTAIN_CONTEXT"
 }
 ```
 
@@ -121,7 +121,7 @@ The **output** of the command is:
 
 **Example**: 
 ```bash
-curl -G "{FQDN}/status?session=mystifying_gould&ticket=1&hash=g5U8N2kL0f4R7zV3m1T6bJ9aQ8W0xC2e"
+curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSIONID&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## History
@@ -135,7 +135,7 @@ curl -G "{FQDN}/status?session=mystifying_gould&ticket=1&hash=g5U8N2kL0f4R7zV3m1
 
 **Example**:
 ```bash
-curl -G "{FQDN}/history?session=mystifying_gould&hash=g5U8N2kL0f4R7zV3m1T6bJ9aQ8W0xC2e"
+curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSIONID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Context
@@ -148,7 +148,7 @@ curl -G "{FQDN}/history?session=mystifying_gould&hash=g5U8N2kL0f4R7zV3m1T6bJ9aQ8
 
 **Example**:
 ```bash
-curl -G "{FQDN}/context?hash=g5U8N2kL0f4R7zV3m1T6bJ9aQ8W0xC2e"
+curl -G "{FQDN}/context?hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Index 
