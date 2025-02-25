@@ -15,6 +15,7 @@ services:
       - /usr/bin:/usr/bin
       - /bin:/bin
       - ./sessions:/app/sessions
+      - ./assets:/app/assets
       - ./.env:/app/.env
     env_file:
       - .env
