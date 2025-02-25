@@ -4,7 +4,7 @@ FROM golang:1.21-alpine AS builder
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache bash curl sh busybox
 
 # Copy go mod files
 COPY go.mod go.sum ./
