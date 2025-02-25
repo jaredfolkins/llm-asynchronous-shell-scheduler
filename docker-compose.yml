@@ -11,9 +11,7 @@ services:
     pid: host
     privileged: true
     volumes:
-      - /usr/local/bin:/usr/local/bin
-      - /usr/bin:/usr/bin
-      - /bin:/bin
+      - /:/host
       - ./sessions:/app/sessions
       - ./assets:/app/assets
       - ./.env:/app/.env
