@@ -186,6 +186,8 @@ After running commands, you’ll see a structure like:
 - You go to the index page at `{FQDN}/context` to gather your context.
 - Given the objective you issue a command to the server using the `{FQDN}/shell` endpoint providing the `hash` and `cmd` parameters.
 - Returned is a json object with a `ticket` and `session`
+- YOU MUST REMEMBER these values to continue the process.
+- Use the `session` value in all future requests to maintain context.
 - You check the status of the `ticket` using the `{FQDN}/status` endpoint by supplying the `ticket`, `session`, and `hash` parameters.
 - You continue to check the status of the ticket until the command is complete.
 - Once you have the result you use the `session` and `hash` parameters to issue a new `cmd` to the `{FQDN}/shell` endpoint.

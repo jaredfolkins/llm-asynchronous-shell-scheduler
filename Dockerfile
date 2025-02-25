@@ -22,8 +22,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Install necessary runtime dependencies
-RUN apk add --no-cache bash curl \
-    && ln -sf /bin/bash /bin/sh \
+RUN apk add --no-cache bash curl && ln -sf /bin/bash /bin/sh 
 
 # Copy binary from builder
 COPY --from=builder /app/llmass .
