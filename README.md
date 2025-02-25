@@ -199,4 +199,4 @@ After running commands, you’ll see a structure like:
 
 ## License
 
-This project is released by [Jared Folkins](https://x.com/jf0lkins) under the [MIT License](https://opensource.org/licenses/MIT). See the [LICENSE](LICENSE) file for details.
+This project is released by [Jared Folkins](https://x.com/jf0lkins) under the [MIT License](https://opensource.org/licenses/MIT). See the [GITHUB](https://github.com/jaredfolkins/llm-asynchronous-shell-scheduler) for more details.
