@@ -581,24 +581,24 @@ func (s *Shell) Execute(command string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Create a unique marker
-	marker := fmt.Sprintf("DONE-%d", time.Now().UnixNano())
+	// Create unique start and end markers
+	startMarker := fmt.Sprintf("START-%d", time.Now().UnixNano())
+	endMarker := fmt.Sprintf("END-%d", time.Now().UnixNano())
 
-	// Write command with echo marker
-	fullCmd := fmt.Sprintf("%s; echo '%s'\n", command, marker)
+	// Write command with markers and command status
+	fullCmd := fmt.Sprintf("echo '%s'; %s; echo $? > /tmp/cmdstatus; echo '%s'\n",
+		startMarker, command, endMarker)
 	if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
 		return "", fmt.Errorf("failed to write command: %v", err)
 	}
 
-	// Create a channel for the result
 	resultCh := make(chan string)
 	errCh := make(chan error)
 
-	// Read output in a goroutine
 	go func() {
 		var output strings.Builder
-		buf := make([]byte, 1)
-		var markerBuf string
+		var collecting bool
+		buf := make([]byte, 1024)
 
 		for {
 			n, err := s.Stdout.Read(buf)
@@ -610,40 +610,103 @@ func (s *Shell) Execute(command string) (string, error) {
 			}
 
 			if n > 0 {
-				char := string(buf[:n])
-				output.WriteString(char)
-				markerBuf += char
-
-				// Check if we've found our marker
-				if strings.Contains(markerBuf, marker) {
-					// Remove the marker and any trailing newlines
-					result := strings.TrimSuffix(output.String(), marker)
-					result = strings.TrimRight(result, "\n")
-					resultCh <- result
-					return
+				chunk := string(buf[:n])
+				if strings.Contains(chunk, startMarker) {
+					collecting = true
+					chunk = chunk[strings.Index(chunk, startMarker)+len(startMarker):]
 				}
 
-				// Keep marker buffer size reasonable
-				if len(markerBuf) > len(marker) {
-					markerBuf = markerBuf[1:]
+				if collecting {
+					if strings.Contains(chunk, endMarker) {
+						chunk = chunk[:strings.Index(chunk, endMarker)]
+						output.WriteString(chunk)
+						resultCh <- output.String()
+						return
+					}
+					output.WriteString(chunk)
 				}
 			}
 		}
 	}()
 
-	// Wait for result with timeout
 	select {
 	case result := <-resultCh:
-		// Clean up the output
-		result = strings.TrimPrefix(result, command+"\n")
-		return result, nil
+		return strings.TrimSpace(result), nil
 	case err := <-errCh:
 		return "", err
-	case <-time.After(5 * time.Second):
-		return "", fmt.Errorf("command timed out")
+	case <-time.After(30 * time.Second):
+		return "", fmt.Errorf("command timed out after 30 seconds")
 	}
 }
 
+/*
+	func (s *Shell) Execute(command string) (string, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		// Create a unique marker
+		marker := fmt.Sprintf("DONE-%d", time.Now().UnixNano())
+
+		// Write command with echo marker
+		fullCmd := fmt.Sprintf("%s; echo '%s'\n", command, marker)
+		if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
+			return "", fmt.Errorf("failed to write command: %v", err)
+		}
+
+		// Create a channel for the result
+		resultCh := make(chan string)
+		errCh := make(chan error)
+
+		// Read output in a goroutine
+		go func() {
+			var output strings.Builder
+			buf := make([]byte, 1)
+			var markerBuf string
+
+			for {
+				n, err := s.Stdout.Read(buf)
+				if err != nil {
+					if err != io.EOF {
+						errCh <- fmt.Errorf("failed to read output: %v", err)
+					}
+					return
+				}
+
+				if n > 0 {
+					char := string(buf[:n])
+					output.WriteString(char)
+					markerBuf += char
+
+					// Check if we've found our marker
+					if strings.Contains(markerBuf, marker) {
+						// Remove the marker and any trailing newlines
+						result := strings.TrimSuffix(output.String(), marker)
+						result = strings.TrimRight(result, "\n")
+						resultCh <- result
+						return
+					}
+
+					// Keep marker buffer size reasonable
+					if len(markerBuf) > len(marker) {
+						markerBuf = markerBuf[1:]
+					}
+				}
+			}
+		}()
+
+		// Wait for result with timeout
+		select {
+		case result := <-resultCh:
+			// Clean up the output
+			result = strings.TrimPrefix(result, command+"\n")
+			return result, nil
+		case err := <-errCh:
+			return "", err
+		case <-time.After(5 * time.Second):
+			return "", fmt.Errorf("command timed out")
+		}
+	}
+*/
 func cleanShellOutput(output string) string {
 	// Remove ANSI escape codes
 	output = strings.ReplaceAll(output, "\r", "")
