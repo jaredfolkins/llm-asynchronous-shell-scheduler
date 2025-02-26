@@ -251,9 +251,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	cmd.mu.Lock()
 	defer cmd.mu.Unlock()
 
-	// Log the command being executed
-	logger.Printf("Executing command for session %s: %s", session, cmdInput)
-
 	sessionFolder := filepath.Join(sessionsDir, session)
 	if _, err := os.Stat(sessionFolder); os.IsNotExist(err) {
 		msg := fmt.Sprintf("Session %s does not exist", session)
@@ -297,6 +294,13 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	// Log the command being executed
+	if isCached {
+		logger.Printf("EXECUTING: cmd: %s session: %s", session, cmdInput)
+	} else {
+		logger.Printf("CACHED: cmd: %s session: %s", session, cmdInput)
+	}
 
 	resp := &Resp{
 		Ticket:   ticket,
@@ -594,7 +598,6 @@ func (s *Shell) Execute(command string) (string, bool, error) {
 
 	// Check if this is the same as the last command and it was run within the last minute
 	if s.lastCommand != nil && s.lastCommand.Input == command && time.Since(s.lastCommand.Time) < time.Minute {
-		log.Printf("Using cached result for command: %s", command)
 		if s.lastCommand.Error != "" {
 			return "", false, fmt.Errorf(s.lastCommand.Error)
 		}
