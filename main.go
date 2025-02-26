@@ -37,11 +37,12 @@ type Cmd struct {
 }
 
 type Resp struct {
-	Ticket  int    `json:"ticket"`
-	Session string `json:"session"`
-	Input   string `json:"input"`
-	Output  string `json:"output"`
-	Error   string `json:"error"`
+	IsCached bool   `json:"cached"`
+	Ticket   int    `json:"ticket"`
+	Session  string `json:"session"`
+	Input    string `json:"input"`
+	Output   string `json:"output"`
+	Error    string `json:"error"`
 }
 
 const (
@@ -275,7 +276,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := shell.Execute(cmdInput)
+	output, isCached, err := shell.Execute(cmdInput)
 	if err != nil {
 		msg := fmt.Sprintf("Error executing command: %v", err)
 		writeJsonError(w, msg)
@@ -298,11 +299,12 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	resp := &Resp{
-		Ticket:  ticket,
-		Session: session,
-		Input:   cmdInput,
-		Output:  cleanedOutput,
-		Error:   "",
+		Ticket:   ticket,
+		Session:  session,
+		Input:    cmdInput,
+		Output:   cleanedOutput,
+		Error:    "",
+		IsCached: isCached,
 	}
 
 	jsonResp, err := json.Marshal(resp)
@@ -492,13 +494,21 @@ func printHTML(w http.ResponseWriter, html string) {
 	</html>`, html)
 }
 
+type CommandCache struct {
+	Input  string
+	Output string
+	Error  string
+	Time   time.Time
+}
+
 type Shell struct {
-	Cmd     *exec.Cmd
-	Stdin   io.WriteCloser
-	Stdout  io.ReadCloser
-	Session string
-	LogFile string
-	mu      sync.Mutex
+	Cmd         *exec.Cmd
+	Stdin       io.WriteCloser
+	Stdout      io.ReadCloser
+	Session     string
+	LogFile     string
+	mu          sync.Mutex
+	lastCommand *CommandCache
 }
 
 var (
@@ -577,19 +587,37 @@ func getOrCreateShell(session string) (*Shell, error) {
 	return shell, nil
 }
 
-func (s *Shell) Execute(command string) (string, error) {
+func (s *Shell) Execute(command string) (string, bool, error) {
+	var isCached bool
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Check if this is the same as the last command and it was run within the last minute
+	if s.lastCommand != nil && s.lastCommand.Input == command && time.Since(s.lastCommand.Time) < time.Minute {
+		log.Printf("Using cached result for command: %s", command)
+		if s.lastCommand.Error != "" {
+			return "", false, fmt.Errorf(s.lastCommand.Error)
+		}
+		isCached = true
+		return s.lastCommand.Output, isCached, nil
+	}
+
 	// Create unique start and end markers
-	startMarker := fmt.Sprintf("START-%d", time.Now().UnixNano())
-	endMarker := fmt.Sprintf("END-%d", time.Now().UnixNano())
+	marker := time.Now().UnixNano()
+	startMarker := fmt.Sprintf("START-%d", marker)
+	endMarker := fmt.Sprintf("END-%d", marker)
 
 	// Write command with markers and command status
 	fullCmd := fmt.Sprintf("echo '%s'; %s; echo $? > /tmp/cmdstatus; echo '%s'\n",
 		startMarker, command, endMarker)
+
 	if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
-		return "", fmt.Errorf("failed to write command: %v", err)
+		s.lastCommand = &CommandCache{
+			Input: command,
+			Error: err.Error(),
+			Time:  time.Now(),
+		}
+		return "", isCached, fmt.Errorf("failed to write command: %v", err)
 	}
 
 	resultCh := make(chan string)
@@ -631,15 +659,93 @@ func (s *Shell) Execute(command string) (string, error) {
 
 	select {
 	case result := <-resultCh:
-		return strings.TrimSpace(result), nil
+		cleanResult := strings.TrimSpace(result)
+		s.lastCommand = &CommandCache{
+			Input:  command,
+			Output: cleanResult,
+			Time:   time.Now(),
+		}
+		return cleanResult, isCached, nil
 	case err := <-errCh:
-		return "", err
+		s.lastCommand = &CommandCache{
+			Input: command,
+			Error: err.Error(),
+			Time:  time.Now(),
+		}
+		return "", isCached, err
 	case <-time.After(30 * time.Second):
-		return "", fmt.Errorf("command timed out after 30 seconds")
+		s.lastCommand = &CommandCache{
+			Input: command,
+			Error: "command timed out after 30 seconds",
+			Time:  time.Now(),
+		}
+		return "", isCached, fmt.Errorf("command timed out after 30 seconds")
 	}
 }
 
 /*
+	func (s *Shell) Execute(command string) (string, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		// Create unique start and end markers
+		startMarker := fmt.Sprintf("START-%d", time.Now().UnixNano())
+		endMarker := fmt.Sprintf("END-%d", time.Now().UnixNano())
+
+		// Write command with markers and command status
+		fullCmd := fmt.Sprintf("echo '%s'; %s; echo $? > /tmp/cmdstatus; echo '%s'\n",
+			startMarker, command, endMarker)
+		if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
+			return "", fmt.Errorf("failed to write command: %v", err)
+		}
+
+		resultCh := make(chan string)
+		errCh := make(chan error)
+
+		go func() {
+			var output strings.Builder
+			var collecting bool
+			buf := make([]byte, 1024)
+
+			for {
+				n, err := s.Stdout.Read(buf)
+				if err != nil {
+					if err != io.EOF {
+						errCh <- fmt.Errorf("failed to read output: %v", err)
+					}
+					return
+				}
+
+				if n > 0 {
+					chunk := string(buf[:n])
+					if strings.Contains(chunk, startMarker) {
+						collecting = true
+						chunk = chunk[strings.Index(chunk, startMarker)+len(startMarker):]
+					}
+
+					if collecting {
+						if strings.Contains(chunk, endMarker) {
+							chunk = chunk[:strings.Index(chunk, endMarker)]
+							output.WriteString(chunk)
+							resultCh <- output.String()
+							return
+						}
+						output.WriteString(chunk)
+					}
+				}
+			}
+		}()
+
+		select {
+		case result := <-resultCh:
+			return strings.TrimSpace(result), nil
+		case err := <-errCh:
+			return "", err
+		case <-time.After(30 * time.Second):
+			return "", fmt.Errorf("command timed out after 30 seconds")
+		}
+	}
+
 	func (s *Shell) Execute(command string) (string, error) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
