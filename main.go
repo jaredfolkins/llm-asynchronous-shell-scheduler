@@ -280,7 +280,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	var ticket int
 	var file *os.File
 	if isCached {
-		logger.Printf("CACHED: cmd: %s session: %s", session, cmdInput)
+		logger.Printf("CACHED: session: %s cmd: %s", session, cmdInput)
 	} else {
 		// Get the next ticket number
 		ticket, err = getNextTicket(sessionFolder)
@@ -514,6 +514,20 @@ type CommandCache struct {
 	Time   time.Time
 }
 
+type multiWriter struct {
+	writers []io.Writer
+}
+
+func (t *multiWriter) Write(p []byte) (n int, err error) {
+	for _, w := range t.writers {
+		n, err = w.Write(p)
+		if err != nil {
+			return
+		}
+	}
+	return len(p), nil
+}
+
 type Shell struct {
 	Cmd         *exec.Cmd
 	Stdin       io.WriteCloser
@@ -544,7 +558,7 @@ func getOrCreateShell(session string) (*Shell, error) {
 	}
 
 	// Create new shell
-	cmd := exec.Command("/bin/bash")
+	cmd := exec.Command("/bin/bash", "-i")
 
 	// Set environment variables
 	cmd.Env = append(os.Environ(),
@@ -562,24 +576,27 @@ func getOrCreateShell(session string) (*Shell, error) {
 		return nil, fmt.Errorf("failed to create stdout pipe: %v", err)
 	}
 
-	logFile := filepath.Join(sessionDir, "shell.log")
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open log file: %v", err)
-	}
+	/*
+		logFile := filepath.Join(sessionDir, "shell.log")
+		f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %v", err)
+		}
 
-	cmd.Stderr = f
+
+		cmd.Stderr = f
+	*/
+
 	if err := cmd.Start(); err != nil {
-		f.Close()
+		//f.Close()
 		return nil, fmt.Errorf("failed to start shell: %v", err)
 	}
-
 	shell := &Shell{
 		Cmd:     cmd,
 		Stdin:   stdin,
 		Stdout:  stdout,
 		Session: session,
-		LogFile: logFile,
+		// LogFile: logFile,
 	}
 
 	shells[session] = shell
@@ -588,7 +605,6 @@ func getOrCreateShell(session string) (*Shell, error) {
 	initCmds := []string{
 		"export TERM=dumb",
 		"export PS1='$ '",
-		"stty -echo",
 	}
 
 	for _, initCmd := range initCmds {
@@ -598,6 +614,12 @@ func getOrCreateShell(session string) (*Shell, error) {
 	}
 
 	return shell, nil
+}
+
+func buildCommand(command string) string {
+	uuid := time.Now().UnixNano()
+	return fmt.Sprintf("(echo 'START-%[1]d' && %s && echo $? > '/tmp/status-%[1]d' && echo 'END-%[1]d') 2>&1",
+		uuid, command)
 }
 
 func (s *Shell) Execute(command string) (string, bool, error) {
@@ -619,9 +641,8 @@ func (s *Shell) Execute(command string) (string, bool, error) {
 	startMarker := fmt.Sprintf("START-%d", marker)
 	endMarker := fmt.Sprintf("END-%d", marker)
 
-	// Write command with markers and command status
-	fullCmd := fmt.Sprintf("echo '%s'; %s; echo $? > /tmp/cmdstatus; echo '%s'\n",
-		startMarker, command, endMarker)
+	fullCmd := fmt.Sprintf("echo '%s'; %s 2>&1; echo $? > '/Users/jf/tmp/status-%d'; echo '%s'\n",
+		startMarker, command, marker, endMarker)
 
 	if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
 		s.lastCommand = &CommandCache{
