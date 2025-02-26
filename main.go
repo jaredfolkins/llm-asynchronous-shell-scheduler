@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joho/godotenv" // For .env support
 	"github.com/russross/blackfriday/v2"
@@ -27,7 +27,6 @@ var (
 	sessionsDir  string // Global variable for the sessions directory
 	logger       = log.New(os.Stdout, "shellHandler: ", log.LstdFlags)
 	cmd          = &Cmd{} // Global variable to store last command output
-	shell        *Shell
 )
 
 type Cmd struct {
@@ -199,7 +198,8 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	// Read all ticket files in the session
 	file, err := os.ReadFile(filepath.Join(sessionsDir, session, fmt.Sprintf("%02d.ticket", ticket)))
 	if err != nil {
-		fmt.Fprintf(w, "%s\n", "No ticket found")
+		msg := fmt.Sprintf("Failed to read ticket file: %v", err)
+		fmt.Fprintf(w, "%s\n", msg)
 		return
 	}
 
@@ -268,30 +268,24 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = checkAndCreateScreen(session)
+	shell, err := getOrCreateShell(session)
 	if err != nil {
-		msg := fmt.Sprintf("Error creating screen session: %v", err)
+		msg := fmt.Sprintf("Error getting creating shell: %v", err)
 		writeJsonError(w, msg)
 		return
 	}
 
-	screenCmd := fmt.Sprintf("screen -S %s -X stuff '%s\n'", session, strings.ReplaceAll(cmdInput, "'", "'\"'\"'"))
-	cmdRun := exec.Command("/bin/bash", "-c", screenCmd)
-	output, err := cmdRun.CombinedOutput()
-	// Execute the command using a shell to preserve quotes and complex syntax
-	//cmdRun := exec.Command("/bin/bash", "-c", cmdInput) // Use "cmd" /C on Windows if needed
-	//output, err := cmdRun.CombinedOutput()
+	output, err := shell.Execute(cmdInput)
 	if err != nil {
 		msg := fmt.Sprintf("Error executing command: %v", err)
 		writeJsonError(w, msg)
 		return
 	}
 
-	if len(output) > 0 {
-		cmd.Output = string(output)
+	cleanedOutput := cleanShellOutput(output)
+	if cleanedOutput != "" {
+		cmd.Output = cleanedOutput
 	}
-
-	cmd.Input = cmdInput
 
 	// Open the output file for writing
 	outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%02d.ticket", ticket))
@@ -306,9 +300,9 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	resp := &Resp{
 		Ticket:  ticket,
 		Session: session,
-		Input:   cmd.Input,
-		Output:  cmd.Output,
-		Error:   cmd.Error,
+		Input:   cmdInput,
+		Output:  cleanedOutput,
+		Error:   "",
 	}
 
 	jsonResp, err := json.Marshal(resp)
@@ -498,41 +492,173 @@ func printHTML(w http.ResponseWriter, html string) {
 	</html>`, html)
 }
 
-func (shell *Shell) Send(command string) string {
-	var output string
-	fmt.Fprintf(shell.Stdin, "%s\n", command)
-	for shell.Scanner.Scan() {
-		output = shell.Scanner.Text()
-		if output == "" {
-			break
-		}
-	}
-
-	return output
-}
-
 type Shell struct {
 	Cmd     *exec.Cmd
 	Stdin   io.WriteCloser
 	Stdout  io.ReadCloser
-	Scanner *bufio.Scanner
+	Session string
+	LogFile string
+	mu      sync.Mutex
 }
 
-func checkAndCreateScreen(sessionName string) error {
-	// Check if screen session exists
-	checkCmd := exec.Command("screen", "-ls", sessionName)
-	output, _ := checkCmd.CombinedOutput()
+var (
+	shells  = make(map[string]*Shell)
+	shellMu sync.Mutex
+)
 
-	if !strings.Contains(string(output), sessionName) {
-		// Create new screen session
-		createCmd := exec.Command("screen", "-dmS", sessionName)
-		if err := createCmd.Run(); err != nil {
-			return fmt.Errorf("failed to create screen session: %v", err)
-		}
-		log.Printf("Created new screen session: %s", sessionName)
-		return nil
+func getOrCreateShell(session string) (*Shell, error) {
+	shellMu.Lock()
+	defer shellMu.Unlock()
+
+	if shell, exists := shells[session]; exists {
+		return shell, nil
 	}
 
-	log.Printf("Screen session already exists: %s", sessionName)
-	return nil
+	// Create session directory
+	sessionDir := filepath.Join(sessionsDir, session)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create session directory: %v", err)
+	}
+
+	// Create new shell
+	cmd := exec.Command("/bin/bash")
+
+	// Set environment variables
+	cmd.Env = append(os.Environ(),
+		"TERM=dumb",
+		"PS1=$ ",
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+
+	logFile := filepath.Join(sessionDir, "shell.log")
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %v", err)
+	}
+
+	cmd.Stderr = f
+	if err := cmd.Start(); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to start shell: %v", err)
+	}
+
+	shell := &Shell{
+		Cmd:     cmd,
+		Stdin:   stdin,
+		Stdout:  stdout,
+		Session: session,
+		LogFile: logFile,
+	}
+
+	shells[session] = shell
+
+	// Initialize shell settings
+	initCmds := []string{
+		"export TERM=dumb",
+		"export PS1='$ '",
+		"stty -echo",
+	}
+
+	for _, initCmd := range initCmds {
+		if _, err := fmt.Fprintf(stdin, "%s\n", initCmd); err != nil {
+			return nil, fmt.Errorf("failed to initialize shell: %v", err)
+		}
+	}
+
+	return shell, nil
+}
+
+func (s *Shell) Execute(command string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create a unique marker
+	marker := fmt.Sprintf("DONE-%d", time.Now().UnixNano())
+
+	// Write command with echo marker
+	fullCmd := fmt.Sprintf("%s; echo '%s'\n", command, marker)
+	if _, err := fmt.Fprintf(s.Stdin, fullCmd); err != nil {
+		return "", fmt.Errorf("failed to write command: %v", err)
+	}
+
+	// Create a channel for the result
+	resultCh := make(chan string)
+	errCh := make(chan error)
+
+	// Read output in a goroutine
+	go func() {
+		var output strings.Builder
+		buf := make([]byte, 1)
+		var markerBuf string
+
+		for {
+			n, err := s.Stdout.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					errCh <- fmt.Errorf("failed to read output: %v", err)
+				}
+				return
+			}
+
+			if n > 0 {
+				char := string(buf[:n])
+				output.WriteString(char)
+				markerBuf += char
+
+				// Check if we've found our marker
+				if strings.Contains(markerBuf, marker) {
+					// Remove the marker and any trailing newlines
+					result := strings.TrimSuffix(output.String(), marker)
+					result = strings.TrimRight(result, "\n")
+					resultCh <- result
+					return
+				}
+
+				// Keep marker buffer size reasonable
+				if len(markerBuf) > len(marker) {
+					markerBuf = markerBuf[1:]
+				}
+			}
+		}
+	}()
+
+	// Wait for result with timeout
+	select {
+	case result := <-resultCh:
+		// Clean up the output
+		result = strings.TrimPrefix(result, command+"\n")
+		return result, nil
+	case err := <-errCh:
+		return "", err
+	case <-time.After(5 * time.Second):
+		return "", fmt.Errorf("command timed out")
+	}
+}
+
+func cleanShellOutput(output string) string {
+	// Remove ANSI escape codes
+	output = strings.ReplaceAll(output, "\r", "")
+
+	// Split into lines
+	lines := strings.Split(output, "\n")
+
+	// Remove empty lines and prompt lines
+	var filtered []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasSuffix(line, "$") && !strings.HasPrefix(line, ">") {
+			filtered = append(filtered, line)
+		}
+	}
+
+	return strings.Join(filtered, "\n")
 }
