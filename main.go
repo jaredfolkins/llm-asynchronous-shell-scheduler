@@ -258,14 +258,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the next ticket number
-	ticket, err := getNextTicket(sessionFolder)
-	if err != nil {
-		msg := fmt.Sprintf("Error getting next ticket: %v", err)
-		writeJsonError(w, msg)
-		return
-	}
-
 	shell, err := getOrCreateShell(session)
 	if err != nil {
 		msg := fmt.Sprintf("Error getting creating shell: %v", err)
@@ -285,21 +277,36 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		cmd.Output = cleanedOutput
 	}
 
-	// Open the output file for writing
-	outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%02d.ticket", ticket))
-	file, fileErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if fileErr != nil {
-		msg := fmt.Sprintf("Failed to open output file: %v", fileErr)
-		writeJsonError(w, msg)
-		return
-	}
-	defer file.Close()
-
-	// Log the command being executed
-	if !isCached {
-		logger.Printf("EXECUTING: cmd: %s session: %s", session, cmdInput)
-	} else {
+	var ticket int
+	var file *os.File
+	if isCached {
 		logger.Printf("CACHED: cmd: %s session: %s", session, cmdInput)
+	} else {
+		// Get the next ticket number
+		ticket, err = getNextTicket(sessionFolder)
+		if err != nil {
+			msg := fmt.Sprintf("Error getting next ticket: %v", err)
+			writeJsonError(w, msg)
+			return
+		}
+
+		// Open the output file for writing
+		outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%02d.ticket", ticket))
+		fileO, fileErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if fileErr != nil {
+			msg := fmt.Sprintf("Failed to open output file: %v", fileErr)
+			writeJsonError(w, msg)
+			return
+		}
+		defer fileO.Close()
+
+		// Log the command being executed
+		if !isCached {
+			file = fileO
+			logger.Printf("EXECUTING: cmd: %s session: %s", session, cmdInput)
+		} else {
+			logger.Printf("CACHED: cmd: %s session: %s", session, cmdInput)
+		}
 	}
 
 	resp := &Resp{
@@ -318,11 +325,13 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, writeErr := file.WriteString(string(jsonResp))
-	if writeErr != nil {
-		msg := fmt.Sprintf("Failed to write error to file: %v", writeErr)
-		writeJsonError(w, msg)
-		return
+	if !isCached {
+		_, writeErr := file.WriteString(string(jsonResp))
+		if writeErr != nil {
+			msg := fmt.Sprintf("Failed to write error to file: %v", writeErr)
+			writeJsonError(w, msg)
+			return
+		}
 	}
 
 	fmt.Fprintf(w, string(jsonResp))
