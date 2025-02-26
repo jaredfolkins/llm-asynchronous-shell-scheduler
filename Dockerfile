@@ -34,12 +34,6 @@ RUN apk add --no-cache \
     screen \
     && ln -sf /bin/bash /bin/sh
 
-# Install base utilities and screen
-RUN apk add --no-cache \
-    bash \
-    curl \
-    screen \
-    && ln -sf /bin/bash /bin/sh
 
 # Install penetration testing tools and set up Python virtual environment
 RUN apk add --no-cache \

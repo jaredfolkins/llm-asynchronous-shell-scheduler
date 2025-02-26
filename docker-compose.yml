@@ -8,8 +8,11 @@ services:
     image: llmass
     ports:
       - "8083:8083"
-    pid: host
     privileged: true
+    network_mode: host
+    pid: host
+    ipc: host
+    uts: host
     volumes:
       - /tmp:/tmp
       - /:/host
