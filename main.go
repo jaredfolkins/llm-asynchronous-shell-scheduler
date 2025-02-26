@@ -268,9 +268,19 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute the command using a shell to preserve quotes and complex syntax
-	cmdRun := exec.Command("/bin/bash", "-c", cmdInput) // Use "cmd" /C on Windows if needed
+	err = checkAndCreateScreen(session)
+	if err != nil {
+		msg := fmt.Sprintf("Error creating screen session: %v", err)
+		writeJsonError(w, msg)
+		return
+	}
+
+	screenCmd := fmt.Sprintf("screen -S %s -X stuff '%s\n'", session, strings.ReplaceAll(cmdInput, "'", "'\"'\"'"))
+	cmdRun := exec.Command("/bin/bash", "-c", screenCmd)
 	output, err := cmdRun.CombinedOutput()
+	// Execute the command using a shell to preserve quotes and complex syntax
+	//cmdRun := exec.Command("/bin/bash", "-c", cmdInput) // Use "cmd" /C on Windows if needed
+	//output, err := cmdRun.CombinedOutput()
 	if err != nil {
 		msg := fmt.Sprintf("Error executing command: %v", err)
 		writeJsonError(w, msg)
@@ -506,4 +516,23 @@ type Shell struct {
 	Stdin   io.WriteCloser
 	Stdout  io.ReadCloser
 	Scanner *bufio.Scanner
+}
+
+func checkAndCreateScreen(sessionName string) error {
+	// Check if screen session exists
+	checkCmd := exec.Command("screen", "-ls", sessionName)
+	output, _ := checkCmd.CombinedOutput()
+
+	if !strings.Contains(string(output), sessionName) {
+		// Create new screen session
+		createCmd := exec.Command("screen", "-dmS", sessionName)
+		if err := createCmd.Run(); err != nil {
+			return fmt.Errorf("failed to create screen session: %v", err)
+		}
+		log.Printf("Created new screen session: %s", sessionName)
+		return nil
+	}
+
+	log.Printf("Screen session already exists: %s", sessionName)
+	return nil
 }
