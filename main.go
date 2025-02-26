@@ -654,8 +654,12 @@ func cleanShellOutput(output string) string {
 	// Remove empty lines and prompt lines
 	var filtered []string
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasSuffix(line, "$") && !strings.HasPrefix(line, ">") {
+		// Only trim leading/trailing whitespace if the line contains prompt markers
+		if strings.HasSuffix(line, "$") || strings.HasPrefix(line, ">") {
+			continue
+		}
+		// Keep empty lines that are actually spaces
+		if line != "" || strings.TrimSpace(line) != line {
 			filtered = append(filtered, line)
 		}
 	}
