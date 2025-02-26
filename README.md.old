@@ -65,7 +65,7 @@ The `HASH` must be >= 32 characters long.
 
 **Example**:
 ```dotenv
-HASH=REPLACE_ME_WITH_THE_HASH
+HASH=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED
 FQDN=http://localhost:8083
 PORT=8083
 SESSIONS_DIR=sessions
@@ -74,11 +74,12 @@ SESSIONS_DIR=sessions
 
 ## Parameter Map
 
-| GET Parameter | Description                                        | /shell   | /history | /context   | /       |
-|---------------|----------------------------------------------------|----------|----------|------------|---------|
-| `hash`        | >= 32-character password for authentication.       | required | required | required   | n/a     |
-| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a        | n/a     |
-| `session`     | Session in order that the llm can maintain context | required | required | n/a        | n/a     |
+| GET Parameter | Description                                        | /shell   | /history | /status  | /context   | /       |
+|---------------|----------------------------------------------------|----------|----------|----------|------------|---------|
+| `hash`        | >= 32-character password for authentication.       | required | required | required | required   | n/a     |
+| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a      | n/a        | n/a     |
+| `ticket`      | Ticket number of the request                       | n/a      | n/a      | required | n/a        | n/a     |
+| `session`     | Session in order that the llm can maintain context | no       | required | required | n/a        | n/a     |
 
 ## Shell
 
@@ -92,16 +93,14 @@ SESSIONS_DIR=sessions
 
 **Example**: 
 ```bash
-curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 A **successful** response returns:
 ```
 {
-  "ticket":REMEMBER_THIS_ID,
-  "session":"USE_SESSION_TO_MAINTAIN_CONTEXT",
-  "cmd_intput": "THE_COMMAND_YOU_SENT_AS_EXECUTED",
-  "cmd_output": "THE_RESULT_OF_THE_COMMAND",
+  "ticket":REMEMBER_THIS_ID_TO_MANAGE_SEQUENTIAL_REQUESTS_DURING_THIS_SESSION,
+  "session":"REMEMBER_SESSION_TO_MAINTAIN_CONTEXT"
 }
 ```
 
@@ -109,6 +108,21 @@ The **output** of the command is:
 
 - saved in a new named `<int>.ticket` 
 - the file is inside `SESSIONS_DIR/<sessionname>/`
+
+## Status
+
+- **Description**: Returns the output of a specific ticket.
+- **Path**: [{FQDN}/status]({FQDN}/status)
+- **Method**: `GET`
+- **Query Parameters**:
+  - `hash`: Must match the `HASH`.
+  - `session`: The session name to fetch the ticket from.
+  - `ticket`: The specific ticket number to retrieve.
+
+**Example**: 
+```bash
+curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSION&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
+```
 
 ## History
 
@@ -121,7 +135,7 @@ The **output** of the command is:
 
 **Example**:
 ```bash
-curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Context
@@ -134,7 +148,7 @@ curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_T
 
 **Example**:
 ```bash
-curl -G "{FQDN}/context?hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/context?hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Index 
