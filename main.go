@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -14,8 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/docker/docker/pkg/namesgenerator" // Docker's name generator package
-	"github.com/joho/godotenv"                    // For .env support
+	"github.com/joho/godotenv" // For .env support
 	"github.com/russross/blackfriday/v2"
 )
 
@@ -25,19 +26,53 @@ var (
 	port         string // Global variable for the port
 	sessionsDir  string // Global variable for the sessions directory
 	logger       = log.New(os.Stdout, "shellHandler: ", log.LstdFlags)
-	cmdOutput    = &CommandOutput{} // Global variable to store last command output
+	cmd          = &Cmd{} // Global variable to store last command output
+	shell        *Shell
 )
 
-type CommandOutput struct {
-	Output string
+type Cmd struct {
 	Error  string
+	Output string
+	Input  string
 	mu     sync.Mutex // Ensures thread-safe access to the output
 }
+
 type Resp struct {
-	Ticket    int           `json:"ticket"`
-	Session   string        `json:"session"`
-	CmdInput  string        `json:"cmd_input"`
-	CmdOutput CommandOutput `json:"cmd_output"`
+	Ticket  int    `json:"ticket"`
+	Session string `json:"session"`
+	Input   string `json:"input"`
+	Output  string `json:"output"`
+	Error   string `json:"error"`
+}
+
+const (
+	errorMessage      = "An error occurred while processing your request."
+	errHashMessage    = "Invalid or missing 'hash' parameter"
+	errSessionMessage = "Invalid or missing 'session' parameter"
+	errTicketMessage  = "Invalid or missing 'ticket' parameter"
+	errCmdMessage     = "Invalid or missing 'cmd' parameter"
+	errMethodMessage  = "Method not allowed"
+	errServerMessage  = "Server error"
+)
+
+func main() {
+
+	loadEnv()
+
+	// Register handlers for the endpoints
+	http.HandleFunc("/", readmeHandler)
+	http.HandleFunc("/shell", shellHandler)
+	http.HandleFunc("/history", historyHandler)
+	http.HandleFunc("/status", statusHandler)
+	http.HandleFunc("/context", contextHandler)
+	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
+	// Start the server using the PORT from .env
+	listenAddr := fmt.Sprintf(":%s", port)
+	logger.Printf("Starting server with FQDN: %s on port %s", fqdn, port)
+	err := http.ListenAndServe(listenAddr, nil)
+	if err != nil {
+		logger.Fatalf("Server failed: %v", err)
+	}
 }
 
 func loadEnv() {
@@ -70,16 +105,12 @@ func loadEnv() {
 	}
 
 	// Initialize sessions directory
-	log.Println(sessionsDir)
 	if err := os.MkdirAll(sessionsDir, 0755); err != nil {
 		logger.Fatalf("Failed to initialize sessions directory: %v", err)
 	}
 
 }
 func getNextTicket(sessionFolder string) (int, error) {
-	// Create the full path to the session folder
-	log.Println(sessionFolder)
-
 	// Create the session folder if it doesn't exist
 	err := os.MkdirAll(sessionFolder, 0755)
 	if err != nil {
@@ -107,32 +138,46 @@ func getNextTicket(sessionFolder string) (int, error) {
 	// Return next ticket number
 	return maxTicket + 1, nil
 }
+
+type JsonErr struct {
+	Error string `json:"error"`
+}
+
+func writeJsonError(w http.ResponseWriter, msg string) {
+	resp, err := json.Marshal(&JsonErr{Error: msg})
+	if err != nil {
+		logger.Printf("Failed to marshal JSON response: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to marshal JSON response: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, string(resp), http.StatusMethodNotAllowed)
+}
 func statusHandler(w http.ResponseWriter, r *http.Request) {
-	// Ensure the request is a GET
+	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJsonError(w, errMethodMessage)
 		return
 	}
 
 	// Validate the hash parameter
 	ticket, err := strconv.Atoi(r.URL.Query().Get("ticket"))
 	if err != nil {
-		http.Error(w, "Invalid or missing 'ticket' parameter", http.StatusBadRequest)
+		writeJsonError(w, errTicketMessage)
 		return
 	}
 
 	// Validate the hash parameter
 	hashParam := r.URL.Query().Get("hash")
 	if subtle.ConstantTimeCompare([]byte(hashParam), []byte(hashPassword)) != 1 {
-		http.Error(w, "Invalid or missing 'hash' parameter", http.StatusUnauthorized)
+		writeJsonError(w, errHashMessage)
 		return
 	}
 
 	// Check if session is provided in query parameters
 	session := r.URL.Query().Get("session")
 	if session == "" {
-		// Generate a dynamic session name using Docker's namesgenerator if not provided
-		session = namesgenerator.GetRandomName(0)
+		writeJsonError(w, errSessionMessage)
+		return
 	}
 
 	// If session is provided, create the session directory if it doesn't exist
@@ -154,40 +199,42 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	// Read all ticket files in the session
 	file, err := os.ReadFile(filepath.Join(sessionsDir, session, fmt.Sprintf("%d.ticket", ticket)))
 	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
 		fmt.Fprintf(w, "%s\n", "No ticket found")
 		return
 	}
 
-	// Set content type to plain text
-	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprintf(w, "%s\n", file)
 	return
 }
 
 func shellHandler(w http.ResponseWriter, r *http.Request) {
-	// Ensure the request is a GET
+	w.Header().Set("Content-Type", "application/json")
+
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJsonError(w, errMethodMessage)
 		return
 	}
 
 	// Validate the hash parameter
 	hashParam := r.URL.Query().Get("hash")
 	if subtle.ConstantTimeCompare([]byte(hashParam), []byte(hashPassword)) != 1 {
-		http.Error(w, "Invalid or missing 'hash' parameter", http.StatusUnauthorized)
+		writeJsonError(w, errHashMessage)
 		return
 	}
 
 	// Check if session is provided in query parameters
 	session := r.URL.Query().Get("session")
 	if session == "" {
-		http.Error(w, "Invalid or missing 'session' parameter", http.StatusUnauthorized)
-		//session = namesgenerator.GetRandomName(0)
+		writeJsonError(w, errSessionMessage)
+		return
 	}
 
 	// Get query parameters
 	cmdParam := r.URL.Query().Get("cmd")
+	if cmdParam == "" {
+		writeJsonError(w, errCmdMessage)
+		return
+	}
 
 	// Determine the command to execute
 	var cmdInput string
@@ -195,67 +242,76 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		var erru error
 		cmdInput, erru = url.QueryUnescape(cmdParam)
 		if erru != nil {
-			logger.Printf("Failed to unescape command: %v", erru)
-			http.Error(w, fmt.Sprintf("Failed to unescape command: %v", erru), http.StatusBadRequest)
+			writeJsonError(w, "Fail to unescape cmd")
 			return
 		}
 	}
+
+	cmd.mu.Lock()
+	defer cmd.mu.Unlock()
 
 	// Log the command being executed
 	logger.Printf("Executing command for session %s: %s", session, cmdInput)
 
 	sessionFolder := filepath.Join(sessionsDir, session)
 	if _, err := os.Stat(sessionFolder); os.IsNotExist(err) {
-		logger.Printf("Session not found!  %s: %v", sessionFolder, err)
-		http.Error(w, fmt.Sprintf("Session not found!: %v", err), http.StatusInternalServerError)
-
+		msg := fmt.Sprintf("Session %s does not exist", session)
+		writeJsonError(w, msg)
+		return
 	}
 
 	// Get the next ticket number
 	ticket, err := getNextTicket(sessionFolder)
 	if err != nil {
-		logger.Printf("Failed to generate ticket for session %s: %v", session, err)
-		http.Error(w, fmt.Sprintf("Failed to generate ticket: %v", err), http.StatusInternalServerError)
+		msg := fmt.Sprintf("Error getting next ticket: %v", err)
+		writeJsonError(w, msg)
 		return
 	}
 
-	cmdOutput.mu.Lock()
-	defer cmdOutput.mu.Unlock()
-
 	// Execute the command using a shell to preserve quotes and complex syntax
-	cmd := exec.Command("sh", "-c", cmdInput) // Use "cmd" /C on Windows if needed
-	output, err := cmd.CombinedOutput()
-	cmdOutput.Error = fmt.Sprintf("%s", err)
-	cmdOutput.Output = string(output)
+	cmdRun := exec.Command("/bin/bash", "-c", cmdInput) // Use "cmd" /C on Windows if needed
+	output, err := cmdRun.CombinedOutput()
+	if err != nil {
+		msg := fmt.Sprintf("Error executing command: %v", err)
+		writeJsonError(w, msg)
+		return
+	}
+
+	if len(output) > 0 {
+		cmd.Output = string(output)
+	}
+
+	cmd.Input = cmdInput
 
 	// Open the output file for writing
 	outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%d.ticket", ticket))
 	file, fileErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if fileErr != nil {
-		logger.Printf("Failed to open output file %s: %v", outputFile, fileErr)
-		http.Error(w, fmt.Sprintf("Failed to open output file: %v", fileErr), http.StatusInternalServerError)
+		msg := fmt.Sprintf("Failed to open output file: %v", fileErr)
+		writeJsonError(w, msg)
 		return
 	}
 	defer file.Close()
 
 	resp := &Resp{
-		Ticket:    ticket,
-		Session:   session,
-		CmdInput:  cmdInput,
-		CmdOutput: *cmdOutput,
+		Ticket:  ticket,
+		Session: session,
+		Input:   cmd.Input,
+		Output:  cmd.Output,
+		Error:   cmd.Error,
 	}
 
 	jsonResp, err := json.Marshal(resp)
 	if err != nil {
-		logger.Printf("Failed to marshal JSON response: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to marshal JSON response: %v", err), http.StatusInternalServerError)
+		msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
+		writeJsonError(w, msg)
 		return
 	}
 
 	_, writeErr := file.WriteString(string(jsonResp))
 	if writeErr != nil {
-		logger.Printf("Failed to write error to file %s: %v", outputFile, writeErr)
-		http.Error(w, fmt.Sprintf("Failed to write error to file: %v", writeErr), http.StatusInternalServerError)
+		msg := fmt.Sprintf("Failed to write error to file: %v", writeErr)
+		writeJsonError(w, msg)
 		return
 	}
 
@@ -264,53 +320,41 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func historyHandler(w http.ResponseWriter, r *http.Request) {
-	// Ensure the request is a GET
+	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJsonError(w, errMethodMessage)
 		return
 	}
 
 	// Validate the hash parameter
 	hashParam := r.URL.Query().Get("hash")
 	if subtle.ConstantTimeCompare([]byte(hashParam), []byte(hashPassword)) != 1 {
-		http.Error(w, "Invalid or missing 'hash' parameter", http.StatusUnauthorized)
+		writeJsonError(w, errHashMessage)
 		return
 	}
 
-	// Get the session parameter
+	// Check if session is provided in query parameters
 	session := r.URL.Query().Get("session")
 	if session == "" {
-		// If no session is specified, fall back to the last command output
-		cmdOutput.mu.Lock()
-		defer cmdOutput.mu.Unlock()
-
-		w.Header().Set("Content-Type", "text/plain")
-		if cmdOutput.Output != "" {
-			fmt.Fprintf(w, "%s", cmdOutput.Output)
-		} else if cmdOutput.Error != "" {
-			fmt.Fprintf(w, "%s", cmdOutput.Error)
-		} else {
-			fmt.Fprintf(w, "No command has been executed yet")
-		}
+		writeJsonError(w, errSessionMessage)
 		return
 	}
 
 	// Check if session exists
 	sessionPath := filepath.Join(sessionsDir, session)
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
-		http.Error(w, fmt.Sprintf("Group %s does not exist", session), http.StatusBadRequest)
+		msg := fmt.Sprintf("Session %s does not exist", session)
+		writeJsonError(w, msg)
 		return
 	}
 
 	// Read all ticket files in the session
 	files, err := os.ReadDir(sessionPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read session directory: %v", err), http.StatusInternalServerError)
+		msg := fmt.Sprintf("Failed to read session directory: %v", err)
+		writeJsonError(w, msg)
 		return
 	}
-
-	// Set content type to plain text
-	w.Header().Set("Content-Type", "text/plain")
 
 	// Sort files by ticket number
 	tickets := make([]string, 0)
@@ -321,10 +365,12 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(tickets) == 0 {
-		fmt.Fprintf(w, "No tickets found for session %s", session)
+		msg := fmt.Sprintf("No tickets found for session %s", session)
+		writeJsonError(w, msg)
 		return
 	}
 
+	var responses []*Resp
 	// Display content of all tickets
 	for _, ticket := range tickets {
 		content, err := os.ReadFile(filepath.Join(sessionPath, ticket))
@@ -332,8 +378,24 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 			logger.Printf("Failed to read ticket %s: %v", ticket, err)
 			continue
 		}
-		fmt.Fprintf(w, "%s\n", content)
+		resp := &Resp{}
+		err = json.Unmarshal(content, resp)
+		if err != nil {
+			logger.Printf("Failed to unmarshal JSON from ticket %s: %v", ticket, err)
+			continue
+		}
+
+		responses = append(responses, resp)
 	}
+
+	jsonRespones, err := json.Marshal(responses)
+	if err != nil {
+		msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
+		writeJsonError(w, msg)
+		return
+	}
+
+	fmt.Fprintf(w, string(jsonRespones))
 	return
 }
 
@@ -426,22 +488,22 @@ func printHTML(w http.ResponseWriter, html string) {
 	</html>`, html)
 }
 
-func main() {
-	// Load environment variables
-	loadEnv()
-
-	// Register handlers for the endpoints
-	http.HandleFunc("/", readmeHandler)
-	http.HandleFunc("/shell", shellHandler)
-	http.HandleFunc("/history", historyHandler)
-	http.HandleFunc("/status", statusHandler)
-	http.HandleFunc("/context", contextHandler)
-	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
-	// Start the server using the PORT from .env
-	listenAddr := fmt.Sprintf(":%s", port)
-	logger.Printf("Starting server with FQDN: %s on port %s", fqdn, port)
-	err := http.ListenAndServe(listenAddr, nil)
-	if err != nil {
-		logger.Fatalf("Server failed: %v", err)
+func (shell *Shell) Send(command string) string {
+	var output string
+	fmt.Fprintf(shell.Stdin, "%s\n", command)
+	for shell.Scanner.Scan() {
+		output = shell.Scanner.Text()
+		if output == "" {
+			break
+		}
 	}
+
+	return output
+}
+
+type Shell struct {
+	Cmd     *exec.Cmd
+	Stdin   io.WriteCloser
+	Stdout  io.ReadCloser
+	Scanner *bufio.Scanner
 }
