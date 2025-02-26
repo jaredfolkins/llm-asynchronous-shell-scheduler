@@ -430,7 +430,9 @@ func printHTML(w http.ResponseWriter, html string) {
 	<body>
 		<div class="main">
 			<div class="header">
-				<img src="/assets/logo.png" alt="LLMAS Logo" width="200" height="200">
+				<a class="header-link" href="/">
+					<img src="/assets/logo.png" alt="LLMAS Logo" width="200" height="200">
+				</a>
 			</div>
 			<div class="content">
 			%s
