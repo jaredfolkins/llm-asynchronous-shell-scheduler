@@ -197,7 +197,7 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read all ticket files in the session
-	file, err := os.ReadFile(filepath.Join(sessionsDir, session, fmt.Sprintf("%d.ticket", ticket)))
+	file, err := os.ReadFile(filepath.Join(sessionsDir, session, fmt.Sprintf("%02d.ticket", ticket)))
 	if err != nil {
 		fmt.Fprintf(w, "%s\n", "No ticket found")
 		return
@@ -294,7 +294,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	cmd.Input = cmdInput
 
 	// Open the output file for writing
-	outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%d.ticket", ticket))
+	outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%02d.ticket", ticket))
 	file, fileErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if fileErr != nil {
 		msg := fmt.Sprintf("Failed to open output file: %v", fileErr)
