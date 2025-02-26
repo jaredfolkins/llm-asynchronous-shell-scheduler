@@ -296,7 +296,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	// Log the command being executed
-	if isCached {
+	if !isCached {
 		logger.Printf("EXECUTING: cmd: %s session: %s", session, cmdInput)
 	} else {
 		logger.Printf("CACHED: cmd: %s session: %s", session, cmdInput)
