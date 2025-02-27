@@ -4,7 +4,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -21,8 +20,6 @@ import (
 )
 
 var (
-	shellsMux    sync.RWMutex // Add RWMutex for better performance
-	shells       = make(map[string]*Shell)
 	hashPassword string // Global variable for the hash password
 	fqdn         string // Global variable for the FQDN
 	port         string // Global variable for the port
@@ -36,7 +33,23 @@ type TicketResponse struct {
 	Session  string `json:"session"`
 	Input    string `json:"input"`
 	Output   string `json:"output"`
+}
+
+type CmdSubmission struct {
+	Type     string `json:"type"`
+	IsCached bool   `json:"cached"`
+	Ticket   int    `json:"ticket"`
+	Session  string `json:"session"`
+	Input    string `json:"input"`
 	Callback string `json:"callback"`
+}
+
+type CmdResults struct {
+	Type    string `json:"type"`
+	Ticket  int    `json:"ticket"`
+	Session string `json:"session"`
+	Input   string `json:"input"`
+	Output  string `json:"output"`
 }
 
 const (
@@ -281,21 +294,13 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 
 	isCached := lastCmdMatch(inputCmd)
 	if isCached {
-		resp := &TicketResponse{
-			IsCached: isCached,
-			Session:  session,
-			Input:    inputCmd,
-		}
+		resp := NewCmdReponse(session, true)
 		jsonResp, err := json.Marshal(resp)
 		if err != nil {
 			msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
 			writeJsonError(w, msg)
 			return
 		}
-
-		// LOG
-		//logger.Printf("CACHED: %s\n%s\n", session, inputCmd)
-
 		fmt.Fprintf(w, string(jsonResp))
 		return
 	}
@@ -307,13 +312,16 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := &TicketResponse{
+	csr := &CmdSubmission{
+		Type:     "submission",
 		Ticket:   ticket,
 		Session:  session,
 		Input:    inputCmd,
 		IsCached: isCached,
 		Callback: Callback(session, ticket),
 	}
+
+	updateLastCommandByTicketResponse(csr)
 
 	// LOG
 	logger.Printf("EXECUTING: %s : %s : %s\n", session, inputCmd, Callback(session, ticket))
@@ -337,14 +345,19 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			msg := fmt.Sprintf("Command execution failed : %s : %v", string(output), err)
 			logger.Print(msg)
-			file.WriteString(msg)
-			return
+			// WARNING: don't return
+			// falled through so we can write the error to file
 		}
 
-		resp.Output = string(output)
-		resp.Callback = ""
+		cer := &CmdResults{
+			Type:    "result",
+			Ticket:  csr.Ticket,
+			Session: csr.Session,
+			Input:   csr.Input,
+			Output:  string(output),
+		}
 
-		jsonResp, err := json.Marshal(resp)
+		jsonResp, err := json.Marshal(cer)
 		if err != nil {
 			msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
 			logger.Print(msg)
@@ -361,7 +374,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	jsonResp, err := json.Marshal(resp)
+	jsonResp, err := json.Marshal(csr)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
 		writeJsonError(w, msg)
@@ -423,7 +436,7 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var responses []*TicketResponse
+	var responses []*CmdResults
 	// Display content of all tickets
 	for _, ticket := range tickets {
 		content, err := os.ReadFile(filepath.Join(sessionPath, ticket))
@@ -431,7 +444,7 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 			logger.Printf("Failed to read ticket %s: %v", ticket, err)
 			continue
 		}
-		resp := &TicketResponse{}
+		resp := &CmdResults{}
 		err = json.Unmarshal(content, resp)
 		if err != nil {
 			logger.Printf("Failed to unmarshal JSON from ticket %s: %v", ticket, err)
@@ -542,19 +555,12 @@ func printHTML(w http.ResponseWriter, html string) {
 }
 
 type CmdCache struct {
-	Input string
-	Time  time.Time
-	mu    sync.Mutex
-}
-
-type Shell struct {
-	Cmd         *exec.Cmd
-	Stdin       io.WriteCloser
-	Stdout      io.ReadCloser
-	Session     string
-	LogFile     string
-	lastCommand *CmdCache
-	mu          sync.RWMutex
+	Ticket   int
+	Input    string
+	Callback string
+	IsCached bool
+	Time     time.Time
+	mu       sync.Mutex
 }
 
 var lastCommand *CmdCache
@@ -565,7 +571,27 @@ func lastCmdMatch(command string) bool {
 	if lastCommand != nil && lastCommand.Input == command && time.Since(lastCommand.Time) < time.Minute {
 		return true
 	}
-	lastCommand.Input = command
-	lastCommand.Time = time.Now()
 	return false
+}
+func updateLastCommandByTicketResponse(resp *CmdSubmission) {
+	lastCommand.mu.Lock()
+	defer lastCommand.mu.Unlock()
+	lastCommand.Callback = resp.Callback
+	lastCommand.IsCached = resp.IsCached
+	lastCommand.Input = resp.Input
+	lastCommand.Ticket = resp.Ticket
+	lastCommand.Time = time.Now()
+}
+
+func NewCmdReponse(session string, isCached bool) *CmdSubmission {
+	lastCommand.mu.Lock()
+	defer lastCommand.mu.Unlock()
+	return &CmdSubmission{
+		Type:     "submission",
+		IsCached: isCached,
+		Session:  session,
+		Ticket:   lastCommand.Ticket,
+		Input:    lastCommand.Input,
+		Callback: lastCommand.Callback,
+	}
 }
