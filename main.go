@@ -246,9 +246,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Log the command being executed
-	logger.Printf("Executing command for session %s: %s", session, inputCmd)
-
 	// If session is provided, create the session directory if it doesn't exist
 	sessionFolder := filepath.Join(sessionsDir, session)
 	if _, err := os.Stat(sessionFolder); os.IsNotExist(err) {
@@ -275,10 +272,14 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Log the command being executed
+		logger.Printf("CACHED: command for session %s: %s", session, inputCmd)
+
 		fmt.Fprintf(w, string(jsonResp))
 		return
 	}
 
+	logger.Printf("EXECUTING: command for session %s: %s", session, inputCmd)
 	// Get the next ticket number
 	ticket, err := getNextTicket(sessionFolder)
 	if err != nil {
