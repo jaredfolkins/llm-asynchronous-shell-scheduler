@@ -183,7 +183,6 @@ After running commands, you’ll see a structure like:
 ## Description: LLM Command Processing with Examples
 
 1. Initial Command Request:
-
 ```bash
    curl -G "{FQDN}/shell" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
@@ -191,8 +190,7 @@ After running commands, you’ll see a structure like:
    --data-urlencode "cmd=ls -la"
 ```
 
-   Response:
-
+Response:
 ```bash
    {
    "type": "submission",
@@ -204,7 +202,6 @@ After running commands, you’ll see a structure like:
 ```
 
 2. Check Command Status:
- 
 ```bash
    curl -G "{FQDN}/callback" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
