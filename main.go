@@ -319,7 +319,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		cmd := exec.Command("/bin/bash", "-c", inputCmd) // Use "cmd" /C on Windows if needed
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			msg := fmt.Sprintf("Command execution failed : %v : %v", output, err)
+			msg := fmt.Sprintf("Command execution failed : %s : %v", string(output), err)
 			logger.Print(msg)
 			file.WriteString(msg)
 			return
