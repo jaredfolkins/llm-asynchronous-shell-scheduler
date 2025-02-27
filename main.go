@@ -40,6 +40,7 @@ type TicketResponse struct {
 }
 
 const (
+	callback          = "%s/callback?hash=%s&session=%s&ticket=%d"
 	errorMessage      = "An error occurred while processing your request."
 	errHashMessage    = "Invalid or missing 'hash' parameter"
 	errSessionMessage = "Invalid or missing 'session' parameter"
@@ -69,6 +70,10 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Server failed: %v", err)
 	}
+}
+
+func Callback(session string, ticket int) string {
+	return fmt.Sprintf(callback, fqdn, hashPassword, session, ticket)
 }
 
 func loadEnv() {
@@ -272,14 +277,13 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Log the command being executed
-		logger.Printf("CACHED: command for session %s: %s", session, inputCmd)
+		// LOG
+		logger.Printf("CACHED: %s\n%s\n%s\n", session, inputCmd, Callback(session, 0))
 
 		fmt.Fprintf(w, string(jsonResp))
 		return
 	}
 
-	logger.Printf("EXECUTING: command for session %s: %s", session, inputCmd)
 	// Get the next ticket number
 	ticket, err := getNextTicket(sessionFolder)
 	if err != nil {
@@ -292,8 +296,11 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		Session:  session,
 		Input:    inputCmd,
 		IsCached: isCached,
-		Callback: fmt.Sprintf("%s/callback?hash=%s&session=%s&ticket=%d", fqdn, hashPassword, session, ticket),
+		Callback: Callback(session, ticket),
 	}
+
+	// LOG
+	logger.Printf("EXECUTING: %s\n%s\n%s\n", session, inputCmd, Callback(session, ticket))
 
 	go func() {
 
