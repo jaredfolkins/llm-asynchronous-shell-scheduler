@@ -146,9 +146,10 @@ func writeJsonError(w http.ResponseWriter, msg string) {
 	resp, err := json.Marshal(&JsonErr{Error: msg})
 	if err != nil {
 		logger.Printf("Failed to marshal JSON response: %v", err)
-		http.Error(w, string(resp), http.StatusMethodNotAllowed)
+		http.Error(w, fmt.Sprintf("Failed to marshal JSON response: %v", err), http.StatusInternalServerError)
 		return
 	}
+	http.Error(w, string(resp), http.StatusMethodNotAllowed)
 }
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -269,6 +270,12 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		writeJsonError(w, msg)
 		return
 	}
+
+	//cleanedOutput := cleanShellOutput(output)
+	//if cleanedOutput != "" {
+	//	cmd.Output = cleanedOutput
+	//}
+	cmd.Output = output
 
 	var ticket int
 	var file *os.File
@@ -706,7 +713,7 @@ func (s *Shell) readOutput(startMarker, endMarker string, resultCh chan string, 
 	}
 }
 
-func cleanOutput(output string) string {
+func cleanShellOutput(output string) string {
 	// Remove ANSI escape codes
 	output = strings.ReplaceAll(output, "\r", "")
 
