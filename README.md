@@ -183,12 +183,17 @@ After running commands, you’ll see a structure like:
 ## Description: LLM Command Processing with Examples
 
 1. Initial Command Request:
+
+```bash
    curl -G "{FQDN}/shell" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
    --data-urlencode "session=my_session" \
    --data-urlencode "cmd=ls -la"
+```
 
    Response:
+
+```bash
    {
    "type": "submission",
    "ticket": 1,
@@ -196,20 +201,28 @@ After running commands, you’ll see a structure like:
    "input": "ls -la",
    "callback": "{FQDN}/callback?hash=YOUR_32CHAR_HASH&session=my_session&ticket=1"
    }
+```
 
 2. Check Command Status:
+ 
+```bash
    curl -G "{FQDN}/callback" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
    --data-urlencode "session=my_session" \
    --data-urlencode "ticket=1"
+```
 
-   Response (if still running):
-   Description: Command for ticket 1 is still executing
-   Next: Wait a moment and try the callback URL again
+#### Running Response
 
-   Response (when complete):
-   Description: Command execution completed
-   Next: You can now issue your next command to /shell
+-   Description: Command for ticket 1 is still executing
+-   Next: Wait a moment and try the callback URL again
+
+#### Complete Response
+
+-   Description: Command execution completed
+-   Next: You can now issue your next command to /shell
+
+```bash
    Data: {
    "type": "result",
    "ticket": 1,
@@ -217,17 +230,24 @@ After running commands, you’ll see a structure like:
    "input": "ls -la",
    "output": "total 32\ndrwxr-xr-x..."
    }
+```
 
 3. View Session History:
+
+```bash
    curl -G "{FQDN}/history" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
    --data-urlencode "session=my_session"
+```
 
 4. Next Command:
+
+```bash
    curl -G "{FQDN}/shell" \
    --data-urlencode "hash=YOUR_32CHAR_HASH" \
    --data-urlencode "session=my_session" \
    --data-urlencode "cmd=pwd"
+```
 
 ## Important Notes
 - Replace {FQDN} with actual server URL
