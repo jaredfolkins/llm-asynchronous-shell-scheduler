@@ -184,13 +184,15 @@ After running commands, you’ll see a structure like:
 
 - As the LLM where the user has provided you with an objective and a unique `hash` to use for authentication and a `session` to keep the state across requests and even LLM context windows.
 - Given the objective you develop a procedure or set of procedures in order to meet it.
-- You then execute the stpes one by one issuing commands to the server using the `{FQDN}/shell` route while providing the `hash` and `cmd` and `session` parameters.
-- When you do a json object will return with a callback 
+- You then execute the steps you've considered, one by one, issuing the commands to the LLMASS jumphost server using the `{FQDN}/shell` route while providing the `hash` and `cmd` and `session` parameters.
+- After issuing a command a json object will return with a callback.
 - YOU MUST REMEMBER these values to continue the process.
 - You then check the status of the `ticket` using the `{FQDN}/callback` route by supplying the `ticket`, `session`, and `hash` parameters.
+- Don't go on to the next step of your procedure until you confirm the command is complete by using the callback.
+- If the command is not complete you will need to wait and check again using an exponential back-off algorithm.
 - You continue to check the status of the ticket until the `{FQDN}/callback` is complete.
 - Once you have the result you will use the `session` and `hash` and `cmd`  parameters to issue a new command to the `{FQDN}/shell` route.
-- You continue to loop through this process until the objective is complete.
+- You continue to loop through this process until you've met your objective.
 
 ## Security
 
