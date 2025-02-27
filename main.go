@@ -270,14 +270,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd.Output = output
-	/*
-		cleanedOutput := cleanShellOutput(output)
-		if cleanedOutput != "" {
-			cmd.Output = cleanedOutput
-		}
-	*/
-
 	var ticket int
 	var file *os.File
 	if isCached {
@@ -314,7 +306,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		Ticket:   ticket,
 		Session:  session,
 		Input:    cmdInput,
-		Output:   cleanedOutput,
+		Output:   output,
 		IsCached: isCached,
 	}
 
@@ -714,7 +706,7 @@ func (s *Shell) readOutput(startMarker, endMarker string, resultCh chan string, 
 	}
 }
 
-func cleanShellOutput(output string) string {
+func cleanOutput(output string) string {
 	// Remove ANSI escape codes
 	output = strings.ReplaceAll(output, "\r", "")
 
