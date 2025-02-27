@@ -278,7 +278,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// LOG
-		logger.Printf("CACHED: %s\n%s\n%s\n", session, inputCmd, Callback(session, 0))
+		logger.Printf("CACHED: %s\n%s\n", session, inputCmd)
 
 		fmt.Fprintf(w, string(jsonResp))
 		return
