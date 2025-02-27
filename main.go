@@ -645,9 +645,9 @@ func (s *Shell) Execute(command string) (string, bool, error) {
 	case err := <-errCh:
 		s.updateLastCommand(command, "", err.Error())
 		return "", false, err
-	case <-time.After(5 * time.Minute):
-		s.updateLastCommand(command, "", "command timed out after 5 minutes")
-		return "", false, fmt.Errorf("command timed out after 5 minute")
+	case <-time.After(15 * time.Second):
+		s.updateLastCommand(command, "", "command timed out")
+		return "", false, fmt.Errorf("command timed out")
 	}
 }
 
