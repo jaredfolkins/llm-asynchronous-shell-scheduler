@@ -146,10 +146,9 @@ func writeJsonError(w http.ResponseWriter, msg string) {
 	resp, err := json.Marshal(&JsonErr{Error: msg})
 	if err != nil {
 		logger.Printf("Failed to marshal JSON response: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to marshal JSON response: %v", err), http.StatusInternalServerError)
+		http.Error(w, string(resp), http.StatusMethodNotAllowed)
 		return
 	}
-	http.Error(w, string(resp), http.StatusMethodNotAllowed)
 }
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -271,10 +270,13 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cleanedOutput := cleanShellOutput(output)
-	if cleanedOutput != "" {
-		cmd.Output = cleanedOutput
-	}
+	cmd.Output = output
+	/*
+		cleanedOutput := cleanShellOutput(output)
+		if cleanedOutput != "" {
+			cmd.Output = cleanedOutput
+		}
+	*/
 
 	var ticket int
 	var file *os.File
