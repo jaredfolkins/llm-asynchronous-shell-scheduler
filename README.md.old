@@ -74,12 +74,12 @@ SESSIONS_DIR=sessions
 
 ## Parameter Map
 
-| GET Parameter | Description                                        | /shell   | /history | /status  | /context   | /       |
-|---------------|----------------------------------------------------|----------|----------|----------|------------|---------|
-| `hash`        | >= 32-character password for authentication.       | required | required | required | required   | n/a     |
-| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a      | n/a        | n/a     |
-| `ticket`      | Ticket number of the request                       | n/a      | n/a      | required | n/a        | n/a     |
-| `session`     | Session in order that the llm can maintain context | no       | required | required | n/a        | n/a     |
+| GET Parameter | Description                                        | /shell   | /history | /callback | /context   | /       |
+|---------------|----------------------------------------------------|----------|----------|-----------|------------|---------|
+| `hash`        | >= 32-character password for authentication.       | required | required | required  | required   | n/a     |
+| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a       | n/a        | n/a     |
+| `ticket`      | Ticket number of the request                       | n/a      | n/a      | required  | n/a        | n/a     |
+| `session`     | Session in order that the llm can maintain context | required | required | required  | n/a        | n/a     |
 
 ## Shell
 
@@ -121,7 +121,7 @@ The **output** of the command is:
 
 **Example**: 
 ```bash
-curl -G "{FQDN}/status?session=REPLACE_WITH_YOUR_SESSION&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
+curl -G "{FQDN}/callback?session=REPLACE_WITH_YOUR_SESSION&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## History

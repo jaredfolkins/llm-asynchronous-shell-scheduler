@@ -1,4 +1,4 @@
-# LLMASS 
+# LLMASS
 
 **LLM Asynchronous Shell Scheduler**
 
@@ -38,7 +38,7 @@ cd llm-asynchronous-shell-scheduler
 touch .env
 ```
 
-  And populate it with the required environment variables.
+And populate it with the required environment variables.
 
 #### Install Dependencies
 
@@ -59,13 +59,13 @@ By default, the server will start listening on the port specified in your `.env`
 
 LLMASS relies on several environment variables that you need to place in a `.env` file.
 
-**Important**: 
+**Important**:
 
 The `HASH` must be >= 32 characters long.
 
 **Example**:
 ```dotenv
-HASH=REPLACE_ME_WITH_THE_HASH
+HASH=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED
 FQDN=http://localhost:8083
 PORT=8083
 SESSIONS_DIR=sessions
@@ -74,11 +74,12 @@ SESSIONS_DIR=sessions
 
 ## Parameter Map
 
-| GET Parameter | Description                                        | /shell   | /history | /context   | /       |
-|---------------|----------------------------------------------------|----------|----------|------------|---------|
-| `hash`        | >= 32-character password for authentication.       | required | required | required   | n/a     |
-| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a        | n/a     |
-| `session`     | Session in order that the llm can maintain context | required | required | n/a        | n/a     |
+| GET Parameter | Description                                        | /shell   | /history | /callback | /context   | /       |
+|---------------|----------------------------------------------------|----------|----------|-----------|------------|---------|
+| `hash`        | >= 32-character password for authentication.       | required | required | required  | required   | n/a     |
+| `cmd`         | Url encoded cli command to execute                 | required | n/a      | n/a       | n/a        | n/a     |
+| `ticket`      | Ticket number of the request                       | n/a      | n/a      | required  | n/a        | n/a     |
+| `session`     | Session in order that the llm can maintain context | required | required | required  | n/a        | n/a     |
 
 ## Shell
 
@@ -86,29 +87,42 @@ SESSIONS_DIR=sessions
 - **Path**: [{FQDN}/shell]({FQDN}/shell)
 - **Method**: `GET`
 - **Query Parameters**:
-    - `hash`: Must match the `HASH` from your `.env`.
-    - `cmd`: is a url encoded shell command to execute, e.g., `ls -lah`.
-    - `session` A directory/session name 
+  - `hash`: Must match the `HASH` from your `.env`.
+  - `cmd`: is a url encoded shell command to execute, e.g., `ls -lah`.
+  - `session` A directory/session name
 
-**Example**: 
+**Example**:
 ```bash
-curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/shell" --data-urlencode "cmd=ls -lah" --data-urlencode "hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 A **successful** response returns:
 ```
 {
-  "ticket":REMEMBER_THIS_ID,
-  "session":"USE_SESSION_TO_MAINTAIN_CONTEXT",
-  "cmd_intput": "THE_COMMAND_YOU_SENT_AS_EXECUTED",
-  "cmd_output": "THE_RESULT_OF_THE_COMMAND",
+  "ticket":REMEMBER_THIS_ID_TO_MANAGE_SEQUENTIAL_REQUESTS_DURING_THIS_SESSION,
+  "session":"REMEMBER_SESSION_TO_MAINTAIN_CONTEXT"
 }
 ```
 
 The **output** of the command is:
 
-- saved in a new named `<int>.ticket` 
+- saved in a new named `<int>.ticket`
 - the file is inside `SESSIONS_DIR/<sessionname>/`
+
+## Status
+
+- **Description**: Returns the output of a specific ticket once the command has completed.
+- **Path**: [{FQDN}/callback]({FQDN}/callback)
+- **Method**: `GET`
+- **Query Parameters**:
+  - `hash`: Must match the `HASH`.
+  - `session`: The session name to fetch the ticket from.
+  - `ticket`: The specific ticket number to retrieve.
+
+**Example**:
+```bash
+curl -G "{FQDN}/callback?session=REPLACE_WITH_YOUR_SESSION&ticket=REPLACE_WITH_YOUR_TICKET_ID&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
+```
 
 ## History
 
@@ -121,7 +135,7 @@ The **output** of the command is:
 
 **Example**:
 ```bash
-curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
 ## Context
@@ -134,10 +148,10 @@ curl -G "{FQDN}/history?session=REPLACE_WITH_YOUR_SESSION&hash=REPLACE_ME_WITH_T
 
 **Example**:
 ```bash
-curl -G "{FQDN}/context?hash=REPLACE_ME_WITH_THE_HASH"
+curl -G "{FQDN}/context?hash=REPLACE_ME_WITH_THE_HASH_YOU_WERE_PROVIDED"
 ```
 
-## Index 
+## Index
 
 - **Description**: : Displays the README.md file in the root directory as HTML
 - **Path**: [{FQDN}/]({FQDN}/)
@@ -168,19 +182,17 @@ After running commands, you’ll see a structure like:
 
 ## LLM Example procedure
 
-- As the LLM where the user has provided you with an objective and a unique `hash` to use for authentication.
-- Remember what you've tried by using the `{FQDN}/history` endpoint by supplying the `session` and `hash` parameters.
-- You go to the context page at `{FQDN}/context` to gather your context.
-- Given the objective you issue a command to the server using the `{FQDN}/shell` endpoint providing the `hash` and `cmd` and `session` parameters.
-- Returned is a json object with a `ticket` and `session`
+- As the LLM where the user has provided you with an objective and a unique `hash` to use for authentication and a `session` to keep the state across requests and even LLM context windows.
+- Given the objective you develop a procedure or set of procedures in order to meet it.
+- You then execute the stpes one by one issuing commands to the server using the `{FQDN}/shell` route while providing the `hash` and `cmd` and `session` parameters.
+- When you do a json object will return with a callback 
 - YOU MUST REMEMBER these values to continue the process.
-- Use the `session` value in all future requests to maintain context.
-- You check the status of your commands using the `{FQDN}/history` endpoint by supplying the `session` and `hash` parameters.
-- Once you have the result you use the `session` and `hash` parameters to issue a new `cmd` to the `{FQDN}/shell` endpoint.
-- You continue to loop through the process until the objective is complete.
-- If at any point you forget what you've done try using the `{FQDN}/history` endpoint again by supplying the `session` and `hash` parameters.
+- You then check the status of the `ticket` using the `{FQDN}/callback` route by supplying the `ticket`, `session`, and `hash` parameters.
+- You continue to check the status of the ticket until the `{FQDN}/callback` is complete.
+- Once you have the result you will use the `session` and `hash` and `cmd`  parameters to issue a new command to the `{FQDN}/shell` route.
+- You continue to loop through this process until the objective is complete.
 
-## Security 
+## Security
 
 - Ensure that `HASH` is random and never checked into source control.
 - Secure your server and be responsible.
