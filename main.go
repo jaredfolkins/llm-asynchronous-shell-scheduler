@@ -21,6 +21,8 @@ import (
 )
 
 var (
+	shellsMux    sync.RWMutex // Add RWMutex for better performance
+	shells       = make(map[string]*Shell)
 	hashPassword string // Global variable for the hash password
 	fqdn         string // Global variable for the FQDN
 	port         string // Global variable for the port
@@ -33,7 +35,6 @@ type Cmd struct {
 	Error  string
 	Output string
 	Input  string
-	mu     sync.Mutex // Ensures thread-safe access to the output
 }
 
 type Resp struct {
@@ -209,7 +210,6 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 
 func shellHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	if r.Method != http.MethodGet {
 		writeJsonError(w, errMethodMessage)
 		return
@@ -246,9 +246,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	cmd.mu.Lock()
-	defer cmd.mu.Unlock()
 
 	sessionFolder := filepath.Join(sessionsDir, session)
 	if _, err := os.Stat(sessionFolder); os.IsNotExist(err) {
@@ -533,18 +530,13 @@ type Shell struct {
 	Stdout      io.ReadCloser
 	Session     string
 	LogFile     string
-	mu          sync.Mutex
 	lastCommand *CommandCache
+	mu          sync.Mutex // Add mutex for lastCommand
 }
 
-var (
-	shells  = make(map[string]*Shell)
-	shellMu sync.Mutex
-)
-
 func getOrCreateShell(session string) (*Shell, error) {
-	//shellMu.Lock()
-	//defer shellMu.Unlock()
+	shellsMux.Lock()
+	defer shellsMux.Unlock()
 
 	if shell, exists := shells[session]; exists {
 		return shell, nil
@@ -615,18 +607,14 @@ func getOrCreateShell(session string) (*Shell, error) {
 }
 
 func (s *Shell) Execute(command string) (string, bool, error) {
-	// First check cache without holding the mutex for too long
-	//s.mu.Lock()
-	if s.lastCommand != nil && s.lastCommand.Input == command && time.Since(s.lastCommand.Time) < time.Minute {
-		if s.lastCommand.Error != "" {
-			//s.mu.Unlock()
-			return "", false, fmt.Errorf(s.lastCommand.Error)
-		}
-		output := s.lastCommand.Output
-		//s.mu.Unlock()
-		return output, true, nil
+	cached, err := s.checkCache(command)
+	if err != nil {
+		return "", false, err
 	}
-	//s.mu.Unlock()
+
+	if len(cached) == 0 {
+		return cached, true, nil
+	}
 
 	// Generate markers outside the lock
 	marker := time.Now().UnixNano()
@@ -636,10 +624,7 @@ func (s *Shell) Execute(command string) (string, bool, error) {
 	fullCmd := fmt.Sprintf("echo '%s'; %s 2>&1; echo $? > '/tmp/status-%d'; echo '%s'\n",
 		startMarker, command, marker, endMarker)
 
-	// Lock only for writing to stdin
-	//s.mu.Lock()
-	_, err := fmt.Fprintf(s.Stdin, fullCmd)
-	//s.mu.Unlock()
+	_, err = fmt.Fprintf(s.Stdin, fullCmd)
 	if err != nil {
 		s.updateLastCommand(command, "", err.Error())
 		return "", false, fmt.Errorf("failed to write command: %v", err)
@@ -668,8 +653,9 @@ func (s *Shell) Execute(command string) (string, bool, error) {
 
 // Helper method to update last command with proper locking
 func (s *Shell) updateLastCommand(input, output, errorMsg string) {
-	//s.mu.Lock()
-	//defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.lastCommand = &CommandCache{
 		Input:  input,
 		Output: output,
@@ -734,4 +720,20 @@ func cleanShellOutput(output string) string {
 	}
 
 	return strings.Join(filtered, "\n")
+}
+
+// Add helper method for cache checking
+func (s *Shell) checkCache(command string) (string, error) {
+	if s.mu.TryLock() {
+		return "", nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastCommand != nil && s.lastCommand.Input == command && time.Since(s.lastCommand.Time) < time.Minute {
+		if s.lastCommand.Error != "" {
+			return "", fmt.Errorf(s.lastCommand.Error)
+		}
+	}
+	return s.lastCommand.Output, nil
 }
