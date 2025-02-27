@@ -300,7 +300,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// LOG
-	logger.Printf("EXECUTING: %s\n%s\n%s\n", session, inputCmd, Callback(session, ticket))
+	logger.Printf("EXECUTING: %s : %s : %s\n", session, inputCmd, Callback(session, ticket))
 
 	go func() {
 
