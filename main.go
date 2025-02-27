@@ -42,7 +42,6 @@ type Resp struct {
 	Session  string `json:"session"`
 	Input    string `json:"input"`
 	Output   string `json:"output"`
-	Error    string `json:"error"`
 }
 
 const (
@@ -314,7 +313,6 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		Session:  session,
 		Input:    cmdInput,
 		Output:   cleanedOutput,
-		Error:    "",
 		IsCached: isCached,
 	}
 

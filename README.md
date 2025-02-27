@@ -169,15 +169,16 @@ After running commands, you’ll see a structure like:
 ## LLM Example procedure
 
 - As the LLM where the user has provided you with an objective and a unique `hash` to use for authentication.
-- You go to the index page at `{FQDN}/context` to gather your context.
-- Given the objective you issue a command to the server using the `{FQDN}/shell` endpoint providing the `hash` and `cmd` parameters.
+- Remember what you've tried by using the `{FQDN}/history` endpoint by supplying the `session` and `hash` parameters.
+- You go to the context page at `{FQDN}/context` to gather your context.
+- Given the objective you issue a command to the server using the `{FQDN}/shell` endpoint providing the `hash` and `cmd` and `session` parameters.
 - Returned is a json object with a `ticket` and `session`
 - YOU MUST REMEMBER these values to continue the process.
 - Use the `session` value in all future requests to maintain context.
-- You check the status of the `ticket` using the `{FQDN}/status` endpoint by supplying the `ticket`, `session`, and `hash` parameters.
-- You continue to check the status of the ticket until the command is complete.
+- You check the status of your commands using the `{FQDN}/history` endpoint by supplying the `session` and `hash` parameters.
 - Once you have the result you use the `session` and `hash` parameters to issue a new `cmd` to the `{FQDN}/shell` endpoint.
 - You continue to loop through the process until the objective is complete.
+- If at any point you forget what you've done try using the `{FQDN}/history` endpoint again by supplying the `session` and `hash` parameters.
 
 ## Security 
 
