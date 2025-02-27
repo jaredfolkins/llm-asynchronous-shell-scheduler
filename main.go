@@ -319,9 +319,9 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		cmd := exec.Command("/bin/bash", "-c", inputCmd) // Use "cmd" /C on Windows if needed
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			msg := fmt.Sprintf("Command execution failed: %v : %v", output, err)
+			msg := fmt.Sprintf("Command execution failed : %v : %v", output, err)
 			logger.Print(msg)
-			writeJsonError(w, msg)
+			file.WriteString(msg)
 			return
 		}
 
@@ -332,7 +332,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			msg := fmt.Sprintf("Failed to marshal JSON response: %v", err)
 			logger.Print(msg)
-			writeJsonError(w, msg)
+			file.WriteString(msg)
 			return
 		}
 
@@ -340,7 +340,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		if writeErr != nil {
 			msg := fmt.Sprintf("Failed to write error to file: %v", writeErr)
 			logger.Print(msg)
-			writeJsonError(w, msg)
+			file.WriteString(msg)
 			return
 		}
 	}()
