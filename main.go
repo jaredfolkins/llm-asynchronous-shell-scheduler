@@ -144,6 +144,22 @@ type JsonErr struct {
 	Error string `json:"error"`
 }
 
+type JsonMsg struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+func writeJsonMsg(w http.ResponseWriter, status, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	resp, err := json.Marshal(&JsonMsg{Status: status, Message: msg})
+	if err != nil {
+		logger.Printf("Failed to marshal JSON response: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to marshal JSON response: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, string(resp), http.StatusOK)
+}
+
 func writeJsonError(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	resp, err := json.Marshal(&JsonErr{Error: msg})
@@ -201,8 +217,8 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(file) == 0 {
-		msg := fmt.Sprintf("No output for ticket %d yet...", ticket)
-		writeJsonError(w, msg)
+		msg := fmt.Sprintf("No output for ticket %d yet. Refresh the page after waiting a bit!", ticket)
+		writeJsonMsg(w, "working", msg)
 		return
 	}
 
