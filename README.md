@@ -180,22 +180,63 @@ After running commands, you’ll see a structure like:
 - **session-name**: Each session is a subdirectory.
 - **1.ticket, 2.ticket**: Text files containing the command outputs (or errors).
 
-## LLM Example procedure
+## Description: LLM Command Processing with Examples
 
-- As the LLM where the user has provided you with an objective and a unique `hash` to use for authentication and a `session` to keep the state across requests and even LLM context windows.
-- Given the objective you develop a procedure or set of procedures in order to meet it.
-- You then execute the steps you've considered, one by one, issuing the commands to the LLMASS jumphost server using the `{FQDN}/shell` route while providing the `hash` and `cmd` and `session` parameters.
-- After issuing a command a json object will return with a callback.
-- YOU MUST REMEMBER these values to continue the process.
-- You then check the status of the `ticket` using the `{FQDN}/callback` route by supplying the `ticket`, `session`, and `hash` parameters.
-- Don't go on to the next step of your procedure until you confirm the command is complete by using the callback.
-- If the command is not complete you will need to wait and check again using an exponential back-off algorithm.
-- You continue to check the status of the ticket until the `{FQDN}/callback` is complete.
-- Once you have the result you will use the `session` and `hash` and `cmd`  parameters to issue a new command to the `{FQDN}/shell` route.
-- You continue to loop through this process until you've met your objective.
+1. Initial Command Request:
+   curl -G "{FQDN}/shell" \
+   --data-urlencode "hash=YOUR_32CHAR_HASH" \
+   --data-urlencode "session=my_session" \
+   --data-urlencode "cmd=ls -la"
 
+   Response:
+   {
+   "type": "submission",
+   "ticket": 1,
+   "session": "my_session",
+   "input": "ls -la",
+   "callback": "{FQDN}/callback?hash=YOUR_32CHAR_HASH&session=my_session&ticket=1"
+   }
+
+2. Check Command Status:
+   curl -G "{FQDN}/callback" \
+   --data-urlencode "hash=YOUR_32CHAR_HASH" \
+   --data-urlencode "session=my_session" \
+   --data-urlencode "ticket=1"
+
+   Response (if still running):
+   Description: Command for ticket 1 is still executing
+   Next: Wait a moment and try the callback URL again
+
+   Response (when complete):
+   Description: Command execution completed
+   Next: You can now issue your next command to /shell
+   Data: {
+   "type": "result",
+   "ticket": 1,
+   "session": "my_session",
+   "input": "ls -la",
+   "output": "total 32\ndrwxr-xr-x..."
+   }
+
+3. View Session History:
+   curl -G "{FQDN}/history" \
+   --data-urlencode "hash=YOUR_32CHAR_HASH" \
+   --data-urlencode "session=my_session"
+
+4. Next Command:
+   curl -G "{FQDN}/shell" \
+   --data-urlencode "hash=YOUR_32CHAR_HASH" \
+   --data-urlencode "session=my_session" \
+   --data-urlencode "cmd=pwd"
+
+## Important Notes
+- Replace {FQDN} with actual server URL
+- Replace YOUR_32CHAR_HASH with actual hash
+- URL encode all commands
+- Use same session name for command sequence
+- Wait for each command to complete
+ 
 ## Security
-
 - Ensure that `HASH` is random and never checked into source control.
 - Secure your server and be responsible.
 - Happy hacking!

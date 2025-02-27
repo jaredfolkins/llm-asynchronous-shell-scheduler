@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,7 @@ type CmdSubmission struct {
 
 type CmdResults struct {
 	Type    string `json:"type"`
+	Next    string `json:"next"`
 	Ticket  int    `json:"ticket"`
 	Session string `json:"session"`
 	Input   string `json:"input"`
@@ -63,23 +65,55 @@ const (
 	errServerMessage  = "Server error"
 )
 
+func tm(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		ctx, cancel := context.WithTimeout(ctx, 300*time.Second)
+		defer cancel()
+
+		done := make(chan bool)
+		go func() {
+			h(w, r.WithContext(ctx))
+			done <- true
+		}()
+
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			w.WriteHeader(http.StatusGatewayTimeout)
+			msg := "Request timeout exceeded"
+			writeJsonError(w, msg)
+			return
+		}
+	}
+}
+
 func main() {
 
 	loadEnv()
 
 	lastCommand = &CmdCache{}
+	listenAddr := fmt.Sprintf(":%s", port)
 
+	server := &http.Server{
+		Addr:              listenAddr,
+		Handler:           nil, // uses default mux
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 20 * time.Second,
+	}
 	// Register handlers for the endpoints
-	http.HandleFunc("/", readmeHandler)
-	http.HandleFunc("/shell", shellHandler)
-	http.HandleFunc("/history", historyHandler)
-	http.HandleFunc("/callback", callbackHandler)
-	http.HandleFunc("/context", contextHandler)
+	http.HandleFunc("/", tm(readmeHandler))
+	http.HandleFunc("/shell", tm(shellHandler))
+	http.HandleFunc("/history", tm(historyHandler))
+	http.HandleFunc("/callback", tm(callbackHandler))
+	http.HandleFunc("/context", tm(contextHandler))
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
 	// Start the server using the PORT from .env
-	listenAddr := fmt.Sprintf(":%s", port)
 	logger.Printf("Starting server with FQDN: %s on port %s", fqdn, port)
-	err := http.ListenAndServe(listenAddr, nil)
+	err := server.ListenAndServe()
 	if err != nil {
 		logger.Fatalf("Server failed: %v", err)
 	}
@@ -327,6 +361,8 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Printf("EXECUTING: %s : %s : %s\n", session, inputCmd, Callback(session, ticket))
 
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
 
 		// Define output filename based on session and ticket
 		outputFile := filepath.Join(sessionFolder, fmt.Sprintf("%02d.ticket", ticket))
@@ -340,7 +376,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 
 		// Execute the command using a shell to preserve quotes and complex syntax
-		cmd := exec.Command("/bin/bash", "-c", inputCmd) // Use "cmd" /C on Windows if needed
+		cmd := exec.CommandContext(ctx, "/bin/bash", "-c", inputCmd) // Use "cmd" /C on Windows if needed
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			msg := fmt.Sprintf("Command execution failed : %s : %v", string(output), err)
@@ -351,6 +387,7 @@ func shellHandler(w http.ResponseWriter, r *http.Request) {
 
 		cer := &CmdResults{
 			Type:    "result",
+			Next:    "This is your result. Review the Input & Output. You can now issue your next command to /shell",
 			Ticket:  csr.Ticket,
 			Session: csr.Session,
 			Input:   csr.Input,
